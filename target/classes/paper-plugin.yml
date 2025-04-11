@@ -1,0 +1,5 @@
+name: QuestPlugin
+version: 1.0
+main: quest.QuestPlugin
+api-version: 1.21
+

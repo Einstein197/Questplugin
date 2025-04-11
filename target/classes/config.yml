@@ -1,0 +1,15 @@
+discord:
+  # 🔐 Your bot's token from the Discord Developer Portal
+  botToken: "YOUR_BOT_TOKEN_HERE"
+  # 👤 The Discord user ID to send DMs to (for quest results, etc.)
+  userId: "YOUR_USER_ID_HERE"
+  # 🧵 The ID of the text channel to send public messages/embeds to
+  channelID: "YOUR_CHANNEL_ID_HERE"
+  # 🎭 The ID of the role to mention (e.g. for quest notifications)
+  roleID: "YOUR_ROLE_ID_HERE"
+quest:
+  # 📜 The default contract for quests
+  contract: "Standard Contract"
+
+  # 📝 The default memo for quests (e.g., description, details)
+  memo: "Complete the quest to earn your reward!"
