@@ -33,22 +33,19 @@ public class StartQuestCommand {
                             return false;
                         }
 
-                        String questTitle = args[0];
+                        // Join the title in case it has multiple words
+                        String questTitle = String.join(" ", args).trim();
 
                         // Check if the player has a WAM stored in the database
                         String wam = getWAMFromDatabase(player);
 
                         if (wam != null) {
-                            // Player has a WAM, check if quest exists and start the quest
-                            if (isQuestAvailable(questTitle)) {
-                                QuestListener.startQuest(player, questTitle);
-                                player.sendMessage("§aYour quest '" + questTitle + "' has started!");
-                                trackPlayerQuest(player, questTitle);
-                            } else {
-                                player.sendMessage("§cThis quest does not exist.");
-                            }
+                            // Player has a WAM, start the quest regardless of DB
+                            QuestListener.startQuest(player, questTitle);
+                            player.sendMessage("§aYour quest '" + questTitle + "' has started!");
+                            trackPlayerQuest(player, questTitle);
                         } else {
-                            // Player does not have a WAM, inform them to log in
+                            // Player does not have a WAM
                             player.sendMessage("§cYou need to log in with your wallet to start a quest." +
                                     "\n/loginquest <wam>");
                         }
@@ -58,6 +55,7 @@ public class StartQuestCommand {
                     return true;
                 }
             });
+
 
             // Register a new command for completing quests
             commandMap.register("completequest", new Command("completequest") {
