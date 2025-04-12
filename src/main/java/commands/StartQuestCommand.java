@@ -17,7 +17,7 @@ public class StartQuestCommand {
     private static Connection connection;
 
     // Register the "startquest" command
-    public static void register(QuestPlugin plugin) {
+    public static void register(quest.QuestPlugin plugin) {
         try {
             Field f = plugin.getServer().getClass().getDeclaredField("commandMap");
             f.setAccessible(true);
@@ -169,4 +169,6 @@ public class StartQuestCommand {
             e.printStackTrace();
         }
     }
+
+
 }

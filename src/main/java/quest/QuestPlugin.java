@@ -53,10 +53,10 @@ public class QuestPlugin extends JavaPlugin {
 
         // Register commands and listeners
         DatabaseUtils.initializeDatabase();
-        StartQuestCommand.register(this);
-        SetQuestCommand.register(this);
+        commands.StartQuestCommand.register(this);
+        commands.SetQuestCommand.register(this);
         QuestCommandExecutor.register(this);
-        getServer().getPluginManager().registerEvents(new QuestListener(this), this);
+        getServer().getPluginManager().registerEvents(new listeners.QuestListener(this), this);
     }
 
     @Override

@@ -110,3 +110,6 @@ buildNumber.properties
 
 # Common working directory
 run/
+target/maven-status/maven-compiler-plugin/compile/default-compile/createdFiles.lst
+target/maven-status/maven-compiler-plugin/compile/default-compile/inputFiles.lst
+target/original-questplugin-1.0.jar
