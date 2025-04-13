@@ -22,8 +22,8 @@ import java.util.regex.Pattern;
 
 import static quest.QuestPlugin.jda;
 
-
 public class SetQuestCommand {
+
     public static void register(QuestPlugin plugin) {
         try {
             Field f = plugin.getServer().getClass().getDeclaredField("commandMap");
@@ -68,9 +68,13 @@ public class SetQuestCommand {
                     String[] rewardParts = reward.split(" ", 2);  // Split into two parts (amount and item name)
                     String item = rewardParts.length > 1 ? rewardParts[1] : "";  // "goldcoin"
 
+                    // Now set the global quest using the static method
                     QuestListener.setGlobalQuest(type, target, amount, durationMillis, title, reward);
-                    DatabaseUtils.saveQuestToDatabase(title, type.name(), target, amount, item, durationMillis);
 
+                    // Use async execution for database operations
+                    Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+                        DatabaseUtils.saveQuestToDatabase(title, type.name(), target, amount, item, durationMillis);
+                    });
 
                     String action = "";
                     switch (type) {
@@ -89,7 +93,7 @@ public class SetQuestCommand {
                             break;
                     }
 
-                    // Now use `action` in your message
+                    // Construct the message and embed
                     String message = "New Quest: " + title + ": " + action + " " + amount + " " + target + " in " + args[4] + ". Reward: " + reward;
                     String embedmessage = action + " " + amount + " " + target + " in " + args[4];
                     String channelId = QuestPlugin.getInstance().getConfig().getString("discord.channelID");
@@ -107,14 +111,16 @@ public class SetQuestCommand {
                     // Build the embed
                     MessageEmbed embed = embedBuilder.build();
 
+                    // Send the embed to Discord
                     if (channel != null) {
-                        channel.sendMessage("<@&"+roleId+">").queue();
+                        channel.sendMessage("<@&" + roleId + ">").queue();
                         channel.sendMessageEmbeds(embed).queue();
                     } else {
                         System.out.println("Channel not found: " + channelId);
                     }
-                        Bukkit.broadcastMessage(message);
 
+                    // Broadcast the quest details to the Minecraft server
+                    Bukkit.broadcastMessage(message);
 
                     return true;
                 }
@@ -124,6 +130,7 @@ public class SetQuestCommand {
         }
     }
 
+    // Method to parse duration string (e.g., 1d2h3m)
     private static long parseDuration(String input) {
         long totalMillis = 0;
         Matcher matcher = Pattern.compile("(\\d+)([dhm])").matcher(input);
@@ -138,5 +145,3 @@ public class SetQuestCommand {
         return totalMillis;
     }
 }
-
-

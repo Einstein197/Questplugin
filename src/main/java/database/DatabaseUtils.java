@@ -16,7 +16,7 @@ import java.util.concurrent.Executors;
 public class DatabaseUtils {
 
     private static final String DB_URL = "jdbc:sqlite:plugins/QuestPlugin/quests.db?journal_mode=wal";
-    private static final ExecutorService dbExecutor = Executors.newSingleThreadExecutor();
+    private static final ExecutorService dbExecutor = Executors.newFixedThreadPool(4);
 
     // ✅ Initializes the quests and completions tables
     public static void initializeDatabase() {
@@ -50,10 +50,13 @@ public class DatabaseUtils {
         runAsync(() -> {
             try (Connection conn = DriverManager.getConnection(DB_URL);
                  Statement stmt = conn.createStatement()) {
+                stmt.execute("PRAGMA journal_mode=WAL;");
+                stmt.execute("PRAGMA busy_timeout = 10000;");
                 stmt.execute(sql1);
                 stmt.execute(sql2);
                 stmt.execute(sql3);
-            } catch (SQLException e) {
+            }
+            catch (SQLException e) {
                 e.printStackTrace();
             }
         });
@@ -64,16 +67,16 @@ public class DatabaseUtils {
         dbExecutor.submit(task);
     }
 
-    // ✅ Saves quest data to the database
-    public static synchronized void saveQuestToDatabase(String title, String type, String target, int amount, String reward, long durationMillis) {
-        long expirationTime = System.currentTimeMillis() + durationMillis;
-
-        runAsync(() -> {
+    public static void saveQuestToDatabase(String title, String type, String target, int amount, String reward, long expirationTime) {
+        dbExecutor.submit(() -> {
             try (Connection conn = DriverManager.getConnection(DB_URL)) {
+                applyPragmas(conn);
+                conn.setAutoCommit(false); // Start transaction
+
                 String sql = """
                 INSERT OR REPLACE INTO quests (title, type, target, amount, reward, duration)
                 VALUES (?, ?, ?, ?, ?, ?)
-                """;
+            """;
                 try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                     stmt.setString(1, title);
                     stmt.setString(2, type);
@@ -83,46 +86,71 @@ public class DatabaseUtils {
                     stmt.setLong(6, expirationTime);
                     stmt.executeUpdate();
                 }
+
+                conn.commit();  // Commit after successful insert
             } catch (SQLException e) {
                 e.printStackTrace();
             }
         });
     }
 
-    // ✅ Save quest completion data to the database asynchronously
+
+
+    // ✅ Thread-safe async execution for saving quest completions
     public static void saveQuestCompletionToDatabase(String playerUUID, String playerName, String questTitle) {
         runAsync(() -> {
-            try (Connection connection = DriverManager.getConnection(DB_URL)) {
-                connection.setAutoCommit(false);  // Start transaction
+            int retries = 3;
+            while (retries-- > 0) {
+                try (Connection conn = DriverManager.getConnection(DB_URL)) {
+                    applyPragmas(conn);
+                    conn.setAutoCommit(false);
 
-                // Try to update the completion record if it exists
-                String updateQuery = "UPDATE quest_completions SET completion_time = ? WHERE player_name = ? AND quest_title = ?";
-                try (PreparedStatement updateStmt = connection.prepareStatement(updateQuery)) {
-                    updateStmt.setLong(1, System.currentTimeMillis());  // Set current time as completion time
-                    updateStmt.setString(2, playerName);  // Player's name
-                    updateStmt.setString(3, questTitle);  // Quest title
-                    int rowsUpdated = updateStmt.executeUpdate();
+                    long now = System.currentTimeMillis();
+                    String updateSql = "UPDATE quest_completions SET completion_time = ? WHERE player_name = ? AND quest_title = ?";
+                    try (PreparedStatement updateStmt = conn.prepareStatement(updateSql)) {
+                        updateStmt.setLong(1, now);
+                        updateStmt.setString(2, playerName);
+                        updateStmt.setString(3, questTitle);
+                        int rows = updateStmt.executeUpdate();
 
-                    // If no rows were updated (i.e., no existing record), insert a new one
-                    if (rowsUpdated == 0) {
-                        insertQuestCompletion(playerUUID, playerName, questTitle, connection);
+                        if (rows == 0) {
+                            String insertSql = "INSERT INTO quest_completions (player_name, quest_title, completion_time) VALUES (?, ?, ?)";
+                            try (PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
+                                insertStmt.setString(1, playerName);
+                                insertStmt.setString(2, questTitle);
+                                insertStmt.setLong(3, now);
+                                insertStmt.executeUpdate();
+                            }
+                        }
+
+                        conn.commit();
+                        break; // success
+                    } catch (SQLException e) {
+                        conn.rollback();
+                        if (e.getMessage().contains("locked") && retries > 0) {
+                            try {
+                                Thread.sleep(100 * (4 - retries));
+                            } catch (InterruptedException ignored) {}
+                        } else {
+                            e.printStackTrace();
+                            break;
+                        }
                     }
-
-                    connection.commit();  // Commit the transaction
                 } catch (SQLException e) {
-                    connection.rollback();  // Rollback in case of error
                     e.printStackTrace();
+                    break;
                 }
-            } catch (SQLException e) {
-                e.printStackTrace();
             }
         });
     }
+
+
+
 
     // Helper method to insert a new completion record if needed
     private static void insertQuestCompletion(String playerUUID, String playerName, String questTitle, Connection connection) {
         try {
-            String query = "INSERT INTO quest_completions (player_name, quest_title, completion_time) VALUES (?, ?, ?, ?)";
+            String query = "INSERT INTO quest_completions (player_name, quest_title, completion_time) VALUES (?, ?, ?)";
             try (PreparedStatement statement = connection.prepareStatement(query)) {
                 statement.setString(1, playerName);  // Player's name
                 statement.setString(2, questTitle);  // Quest title
@@ -138,22 +166,28 @@ public class DatabaseUtils {
     public static List<String> getFormattedCompletionsWithWam(String questTitle) {
         List<String> results = new ArrayList<>();
         String query = """
-            SELECT qc.player_name, pw.wam 
-            FROM quest_completions qc
-            JOIN player_wams pw ON qc.player_name = pw.player_name
-            WHERE qc.quest_title = ?
-            """;
+        SELECT qc.player_name, pw.wam 
+        FROM quest_completions qc
+        JOIN player_wams pw ON qc.player_name = pw.player_name
+        WHERE qc.quest_title = ?
+        """;
 
         try (Connection conn = DriverManager.getConnection(DB_URL);
-             PreparedStatement stmt = conn.prepareStatement(query)) {
+             Statement pragmaStmt = conn.createStatement()) {
 
-            stmt.setString(1, questTitle);
+            // Apply PRAGMAs
+            pragmaStmt.execute("PRAGMA busy_timeout = 10000;");
+            pragmaStmt.execute("PRAGMA journal_mode = WAL;");
 
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    String name = rs.getString("player_name");
-                    String wam = rs.getString("wam");
-                    results.add(name + " (WAM: " + wam + ")");
+            try (PreparedStatement stmt = conn.prepareStatement(query)) {
+                stmt.setString(1, questTitle);
+
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        String name = rs.getString("player_name");
+                        String wam = rs.getString("wam");
+                        results.add(name + " (WAM: " + wam + ")");
+                    }
                 }
             }
 
@@ -164,34 +198,45 @@ public class DatabaseUtils {
         return results;
     }
 
+
     // ✅ Clears old quest completions for a quest asynchronously
     public static synchronized void clearQuestCompletions(String questTitle) {
         runAsync(() -> {
-            String sql = "DELETE FROM quest_completions WHERE quest_title = ?";
-            try (Connection conn = DriverManager.getConnection(DB_URL);
-                 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-                pstmt.setString(1, questTitle);
-                pstmt.executeUpdate();
+            try (Connection conn = DriverManager.getConnection(DB_URL)) {
+                try (Statement pragmaStmt = conn.createStatement()) {
+                    pragmaStmt.execute("PRAGMA busy_timeout = 10000;");
+                    pragmaStmt.execute("PRAGMA journal_mode = WAL;");
+                }
+
+                String sql = "DELETE FROM quest_completions WHERE quest_title = ?";
+                try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                    pstmt.setString(1, questTitle);
+                    pstmt.executeUpdate();
+                }
             } catch (SQLException e) {
                 e.printStackTrace();
             }
         });
+
     }
 
     // ✅ Removes expired quest from the database
     public static synchronized void removeExpiredQuestFromDatabase(String questTitle) {
         runAsync(() -> {
-            String sql1 = "DELETE FROM quests WHERE title = ?";
-            String sql2 = "DELETE FROM quest_completions WHERE quest_title = ?";
-
             try (Connection conn = DriverManager.getConnection(DB_URL)) {
-                // Delete from the quests table
+                try (Statement pragmaStmt = conn.createStatement()) {
+                    pragmaStmt.execute("PRAGMA busy_timeout = 10000;");
+                    pragmaStmt.execute("PRAGMA journal_mode = WAL;");
+                }
+
+                String sql1 = "DELETE FROM quests WHERE title = ?";
+                String sql2 = "DELETE FROM quest_completions WHERE quest_title = ?";
+
                 try (PreparedStatement pstmt1 = conn.prepareStatement(sql1)) {
                     pstmt1.setString(1, questTitle);
                     pstmt1.executeUpdate();
                 }
 
-                // Delete from the quest_completions table
                 try (PreparedStatement pstmt2 = conn.prepareStatement(sql2)) {
                     pstmt2.setString(1, questTitle);
                     pstmt2.executeUpdate();
@@ -200,6 +245,7 @@ public class DatabaseUtils {
                 e.printStackTrace();
             }
         });
+
     }
     public static List<String> getCSVEntriesForQuest(String questTitle) {
         List<String> entries = new ArrayList<>();
@@ -208,12 +254,20 @@ public class DatabaseUtils {
         String contract = QuestPlugin.getInstance().getConfig().getString("quest.contract", "default_contract");
         String memo = QuestPlugin.getInstance().getConfig().getString("quest.memo", "default_memo");
 
-        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:plugins/QuestPlugin/quests.db")) {
-            String query = "SELECT pw.wam AS \"to\", q.amount, q.reward AS token " +
-                    "FROM quest_completions qc " +
-                    "JOIN player_wams pw ON qc.player_name = pw.player_name " +
-                    "JOIN quests q ON qc.quest_title = q.title " +
-                    "WHERE qc.quest_title = ?";
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:plugins/QuestPlugin/quests.db");
+             Statement pragmaStmt = conn.createStatement()) {
+
+            // Apply PRAGMAs
+            pragmaStmt.execute("PRAGMA busy_timeout = 10000;");
+            pragmaStmt.execute("PRAGMA journal_mode = WAL;");
+
+            String query = """
+            SELECT pw.wam AS "to", q.amount, q.reward AS token
+            FROM quest_completions qc
+            JOIN player_wams pw ON qc.player_name = pw.player_name
+            JOIN quests q ON qc.quest_title = q.title
+            WHERE qc.quest_title = ?
+        """;
 
             try (PreparedStatement stmt = conn.prepareStatement(query)) {
                 stmt.setString(1, questTitle);
@@ -223,7 +277,6 @@ public class DatabaseUtils {
                         String amount = rs.getString("amount");
                         String token = rs.getString("token");
 
-                        // Use the loaded contract and memo values
                         entries.add(String.join(",", to, amount, token, contract, memo));
                     }
                 }
@@ -234,6 +287,7 @@ public class DatabaseUtils {
 
         return entries;
     }
+
 
 
 
@@ -260,6 +314,47 @@ public class DatabaseUtils {
     // ✅ Properly shut down the executor when the plugin is disabled
     public static void shutdown() {
         dbExecutor.shutdown();
+        try {
+            if (!dbExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                dbExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            dbExecutor.shutdownNow();
+        }
     }
+
+    public static Connection getConnection() throws SQLException {
+        File dbFile = new File("plugins/QuestPlugin/quests.db");
+        if (!dbFile.exists()) {
+            try {
+                dbFile.getParentFile().mkdirs();
+                dbFile.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+        // Optional but useful for concurrency
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA journal_mode=WAL;");
+            stmt.execute("PRAGMA busy_timeout=3000;");
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+
+        return conn;
+    }
+
+
+
+
+    public static void applyPragmas(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.execute("PRAGMA busy_timeout = 10000;");
+            stmt.execute("PRAGMA journal_mode = WAL;");
+        }
+    }
+
 
 }

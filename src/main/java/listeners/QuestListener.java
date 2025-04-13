@@ -23,8 +23,6 @@ import org.bukkit.scheduler.BukkitRunnable;
 import quest.QuestPlugin;
 import net.dv8tion.jda.api.EmbedBuilder;
 
-
-
 import java.awt.*;
 import java.io.File;
 import java.time.Instant;
@@ -34,6 +32,7 @@ import java.util.List;
 public class QuestListener implements Listener {
     private final QuestPlugin plugin;
 
+    // Quest-related variables
     private static QuestType questType;
     private static String displayTitle = "";
     private static String targetName = "";
@@ -49,10 +48,12 @@ public class QuestListener implements Listener {
     private static final Set<UUID> completed = new HashSet<>();
     private static boolean questExpired = false;
 
+    // Constructor
     public QuestListener(QuestPlugin plugin) {
         this.plugin = plugin;
     }
 
+    // Method to set global quest information (static because it’s called from static context)
     public static void setGlobalQuest(QuestType type, String target, int amount, long duration, String title, String rewardDescription) {
         questType = type;
         goalAmount = amount;
@@ -84,6 +85,7 @@ public class QuestListener implements Listener {
             }
         }
 
+        // Check for quest expiration every tick
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -95,6 +97,7 @@ public class QuestListener implements Listener {
         }.runTaskTimer(QuestPlugin.getInstance(), 0L, 20L);
     }
 
+    // Method to start the quest for a player
     public static void startQuest(Player player, String questTitle) {
         if (questType == null || goalAmount <= 0 || questExpired) {
             player.sendMessage("§cThere is no active quest.");
@@ -120,6 +123,7 @@ public class QuestListener implements Listener {
         bossBars.put(player.getUniqueId(), bar);
     }
 
+    // Event handler for mob kills
     @EventHandler
     public void onMobKill(EntityDeathEvent event) {
         if (questExpired || questType != QuestType.KILL_MOB) return;
@@ -129,6 +133,7 @@ public class QuestListener implements Listener {
         handleProgress(player);
     }
 
+    // Event handler for block breaks
     @EventHandler
     public void onBlockBreak(BlockBreakEvent event) {
         if (questExpired || questType != QuestType.BREAK_BLOCK) return;
@@ -136,6 +141,7 @@ public class QuestListener implements Listener {
         handleProgress(event.getPlayer());
     }
 
+    // Event handler for block placements
     @EventHandler
     public void onBlockPlace(BlockPlaceEvent event) {
         if (questExpired || questType != QuestType.PLACE_BLOCK) return;
@@ -143,6 +149,7 @@ public class QuestListener implements Listener {
         handleProgress(event.getPlayer());
     }
 
+    // Method to handle quest progress
     private void handleProgress(Player player) {
         if (!progress.containsKey(player.getUniqueId())) return;
 
@@ -159,6 +166,7 @@ public class QuestListener implements Listener {
         }
     }
 
+    // Method to complete the quest
     private void completeQuest(Player player, BossBar bar) {
         bar.setTitle("§aQuest Complete!");
         bar.setProgress(1.0);
@@ -173,6 +181,7 @@ public class QuestListener implements Listener {
         DatabaseUtils.saveQuestCompletionToDatabase(player.getUniqueId().toString(), player.getName(), displayTitle);
     }
 
+    // Method to give reward to the player
     public void giveReward(Player player, String reward) {
         if (reward == null || reward.isEmpty()) {
             player.sendMessage("§cNo reward specified.");
@@ -223,6 +232,7 @@ public class QuestListener implements Listener {
         }
     }
 
+    // Method to expire the quest and cleanup
     public static void expireQuest() {
         if (!completed.isEmpty()) {
             List<String> entries = DatabaseUtils.getFormattedCompletionsWithWam(displayTitle);
@@ -243,7 +253,6 @@ public class QuestListener implements Listener {
 
             // Build the embed
             MessageEmbed embed = embedBuilder.build();
-
 
             // Ensure JDA instance is available
             JDA jda = QuestPlugin.getJda();
