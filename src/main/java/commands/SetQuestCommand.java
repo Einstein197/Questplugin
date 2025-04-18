@@ -65,15 +65,26 @@ public class SetQuestCommand {
                     }
 
                     String reward = String.join(" ", Arrays.copyOfRange(args, 5, args.length));
-                    String[] rewardParts = reward.split(" ", 2);  // Split into two parts (amount and item name)
-                    String item = rewardParts.length > 1 ? rewardParts[1] : "";  // "goldcoin"
+                    String[] rewardParts = reward.split(" ", 2);  // Expecting something like "5 goldcoin"
+                    int rewardAmount;
+                    String item;
+
+                    try {
+                        rewardAmount = Integer.parseInt(rewardParts[0]);
+                        item = rewardParts.length > 1 ? rewardParts[1] : "";
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage("§cInvalid reward amount.");
+                        return true;
+                    }
+
 
                     // Now set the global quest using the static method
                     QuestListener.setGlobalQuest(type, target, amount, durationMillis, title, reward);
 
                     // Use async execution for database operations
                     Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                        DatabaseUtils.saveQuestToDatabase(title, type.name(), target, amount, item, durationMillis);
+                        DatabaseUtils.saveQuestToDatabase(title, type.name(), target, amount, item, rewardAmount, durationMillis);
+
                     });
 
                     String action = "";

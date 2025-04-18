@@ -27,6 +27,7 @@ public class DatabaseUtils {
                 target TEXT,
                 amount INTEGER,
                 reward TEXT,
+                reward_amount INTEGER,
                 duration INTEGER
             );
         """;
@@ -67,15 +68,16 @@ public class DatabaseUtils {
         dbExecutor.submit(task);
     }
 
-    public static void saveQuestToDatabase(String title, String type, String target, int amount, String reward, long expirationTime) {
+    public static void saveQuestToDatabase(String title, String type, String target, int amount, String reward, int rewardAmount, long expirationTime)
+    {
         dbExecutor.submit(() -> {
             try (Connection conn = DriverManager.getConnection(DB_URL)) {
                 applyPragmas(conn);
                 conn.setAutoCommit(false); // Start transaction
 
                 String sql = """
-                INSERT OR REPLACE INTO quests (title, type, target, amount, reward, duration)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO quests (title, type, target, amount, reward, reward_amount, duration)
+                VALUES (?, ?, ?, ?, ?, ? , ?)
             """;
                 try (PreparedStatement stmt = conn.prepareStatement(sql)) {
                     stmt.setString(1, title);
@@ -83,7 +85,8 @@ public class DatabaseUtils {
                     stmt.setString(3, target);
                     stmt.setInt(4, amount);
                     stmt.setString(5, reward);
-                    stmt.setLong(6, expirationTime);
+                    stmt.setInt(6, rewardAmount);
+                    stmt.setLong(7, expirationTime);
                     stmt.executeUpdate();
                 }
 
@@ -262,7 +265,7 @@ public class DatabaseUtils {
             pragmaStmt.execute("PRAGMA journal_mode = WAL;");
 
             String query = """
-            SELECT pw.wam AS "to", q.amount, q.reward AS token
+            SELECT pw.wam AS "to", q.reward_amount, q.reward AS token
             FROM quest_completions qc
             JOIN player_wams pw ON qc.player_name = pw.player_name
             JOIN quests q ON qc.quest_title = q.title
@@ -274,7 +277,7 @@ public class DatabaseUtils {
                 try (ResultSet rs = stmt.executeQuery()) {
                     while (rs.next()) {
                         String to = rs.getString("to");
-                        String amount = rs.getString("amount");
+                        String amount = rs.getString("reward_amount");
                         String token = rs.getString("token");
 
                         entries.add(String.join(",", to, amount, token, contract, memo));
