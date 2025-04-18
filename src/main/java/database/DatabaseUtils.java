@@ -299,7 +299,7 @@ public class DatabaseUtils {
     public static File createCSV(List<String> entries, String displayTitle) {
         File csvFile = new File("quest_" + displayTitle.replaceAll("\\s+", "_") + ".csv");
         try (PrintWriter writer = new PrintWriter(csvFile)) {
-            writer.println("to,amount,token,contract,memo"); // Header row
+
 
             for (String entry : entries) {
                 writer.println(entry);
