@@ -22,6 +22,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitRunnable;
 import quest.QuestPlugin;
 import net.dv8tion.jda.api.EmbedBuilder;
+import commands.SetQuestCommand.*;
 
 import java.awt.*;
 import java.io.File;
@@ -49,6 +50,10 @@ public class QuestListener implements Listener {
     private static boolean questExpired = false;
 
     // Constructor
+
+    public static String questMessage;
+
+
     public QuestListener(QuestPlugin plugin) {
         this.plugin = plugin;
     }
@@ -290,4 +295,30 @@ public class QuestListener implements Listener {
 
         DatabaseUtils.clearQuestCompletions(displayTitle); // clear completions for this quest
     }
+    @EventHandler
+    public void onPlayerJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        UUID uuid = player.getUniqueId();
+
+        if (questType == null || questExpired) return;
+
+        // Restore boss bar if the player is already participating
+        if (progress.containsKey(uuid) && !completed.contains(uuid)) {
+            int currentProgress = progress.get(uuid);
+
+            BossBar bar = Bukkit.createBossBar(displayTitle + ": " + currentProgress + "/" + goalAmount + " " + targetName,
+                    BarColor.GREEN, BarStyle.SOLID, BarFlag.CREATE_FOG);
+            bar.setProgress(Math.min(1.0, currentProgress / (double) goalAmount));
+            bar.addPlayer(player);
+
+            bossBars.put(uuid, bar);
+        }
+        // Notify if there's an active quest and the player hasn't joined or completed it yet
+        else if (!completed.contains(uuid)) {
+            player.sendMessage(questMessage);
+            player.sendMessage("§7Join the quest with: §a/startquest " + displayTitle);
+        }
+    }
+
+
 }

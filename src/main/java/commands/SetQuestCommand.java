@@ -106,6 +106,7 @@ public class SetQuestCommand {
 
                     // Construct the message and embed
                     String message = "New Quest: " + title + ": " + action + " " + amount + " " + target + " in " + args[4] + ". Reward: " + reward;
+                    QuestListener.questMessage = message;
                     String embedmessage = action + " " + amount + " " + target + " in " + args[4];
                     String channelId = QuestPlugin.getInstance().getConfig().getString("discord.channelID");
                     String roleId = QuestPlugin.getInstance().getConfig().getString("discord.roleID");
